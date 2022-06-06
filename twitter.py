@@ -3,6 +3,21 @@ import json
 import tweepy
 import sys
 from pprint import pprint
+from bs4 import BeautifulSoup
+import csv 
+
+class User:
+    def __init__(self, username, id, name, political_party):
+        self.username=username
+        self.id=id
+        self.name=name
+        self.political_party=political_party
+        self.tweets=[]
+        self.engaged_users=[]
+        self.shared_urls=[]
+    
+    def __str__(self):
+        return f"Username: {self.username}, Name: {self.name}, Political Party: {self.political_party}"
 
 class Twitter:
     def __init__(self, auth_location="./auth.json"):
@@ -18,40 +33,55 @@ class Twitter:
         except FileExistsError or FileNotFoundError or KeyError as err:
             sys.exit(f"Error: {err}. Failed to init - please check README.md")
 
+        self.client=tweepy.Client(bearer_token=self.bearer_token, wait_on_rate_limit=True)
+
     def get_client(self):
-        return tweepy.Client(bearer_token=self.bearer_token)
+        self.client=tweepy.Client(bearer_token=self.bearer_token)
+
+    def get_users(self, political_party, usernames=[]):
+        length = len(usernames)
+        users=[]
+        if self.client is None:
+            self.get_client()\
+        # max ids per request = 100 
+        step=99
+        for i in range(99, length, step):
+            resp = self.client.get_users(usernames=usernames[i-step:i], user_fields=["username", "name", "id"])
+            for user in resp.data:
+                u = User(user.username, user.id, user.name, political_party)
+                users.append(u)
+            # Use the remaining users < 100
+            if i+step>=length:
+                resp = self.client.get_users(usernames=usernames[i:length], user_fields=["username", "name", "id"])
+                for user in resp.data:
+                    u = User(user.username, user.id, user.name, political_party)
+                    users.append(u)
+
+        return users
+
+
+def starting_twitter_handles(file="./representative-twitters.csv"):
+    with open(file, "r") as data:
+        democrats=[]
+        republicans=[]
+        csv_data=csv.reader(data, delimiter=',')
+        next(csv_data)
+        for row in csv_data:
+            username = row[2].split("@")
+            if len(username)<=1:
+                continue
+            if str(row[4]).strip() == "D":
+                democrats.append(username[len(username)-1])
+            else:
+                republicans.append(username[len(username)-1])
+    return democrats, republicans
 
 def main():
+    democrats, republicans = starting_twitter_handles()
     twitter=Twitter()
-    user_id="216776631"
-    client = twitter.get_client()
-    tweets = client.get_users_tweets(user_id)
-    pprint(tweets)
+    starting_users = twitter.get_users("D", democrats)
+    starting_users.extend(twitter.get_users("R", republicans))
+    for user in starting_users:
+        print(user)
 
 main()
-# #its bad practice to place your bearer token directly into the script (this is just done for illustration purposes)
-# BEARER_TOKEN = "AAAAAAAAAAAAAAAAAAAAAHLbcQEAAAAACQDD3jWZnDzSx%2BdApUVxGmupoUU%3D0p49WEOkZowtirzHP0Do652zRJ9JpSYFqqNKqozDsOKCUV3L2C"
-# #define search twitter function
-# def search_twitter(query, tweet_fields, bearer_token = BEARER_TOKEN):
-#     headers = {"Authorization": "Bearer {}".format(bearer_token)}
-
-#     url = "https://api.twitter.com/2/tweets/search/recent?query={}&{}".format(
-#         query, tweet_fields
-#     )
-#     response = requests.request("GET", url, headers=headers)
-
-#     print(response.status_code)
-
-#     if response.status_code != 200:
-#         raise Exception(response.status_code, response.text)
-#     return response.json()
-
-# #search term
-# query = "(from:BernieSanders)"
-# #twitter fields to be returned by api call
-# tweet_fields = "tweet.fields=text,author_id,created_at"
-
-# #twitter api call
-# json_response = search_twitter(query=query, tweet_fields=tweet_fields, bearer_token=BEARER_TOKEN)
-# #pretty printing
-# print(json.dumps(json_response, indent=4, sort_keys=True))
